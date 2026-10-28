@@ -401,7 +401,7 @@
 <body>
 
     <nav class="navbar">
-        <a href="#home" class="logo">VELOCITY<span>.</span></a>
+        <a href="#home" class="logo">ASHUTOSH<span>.</span></a>
 
         <div class="nav-links">
             <a href="#home">Home</a>
