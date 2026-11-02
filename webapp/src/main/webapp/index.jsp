@@ -401,7 +401,7 @@
 <body>
 
     <nav class="navbar">
-        <a href="#home" class="logo">Vandana<span>.</span></a>
+        <a href="#home" class="logo">Srushti<span>.</span></a>
 
         <div class="nav-links">
             <a href="#home">Home</a>
