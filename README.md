@@ -4,6 +4,8 @@ A learning project that automates delivery of a Java web application to Amazon E
 
 > This repository is based on an upstream Java sample. The application interface is a demonstration; its login form is not backed by an authentication service. AWS resources, Jenkins credentials, Docker Hub access, and host addresses must be configured by each user.
 
+> **Deployment status:** The application was successfully deployed to Amazon EKS during the project. The AWS and EKS resources have since been deleted, so no live endpoint is currently available. The checked-in infrastructure files are sanitized examples for review or recreation.
+
 ## Architecture
 
 ### End-to-end architecture
