@@ -4,18 +4,72 @@ A learning project that automates delivery of a Java web application to Amazon E
 
 > This repository is based on an upstream Java sample. The application interface is a demonstration; its login form is not backed by an authentication service. AWS resources, Jenkins credentials, Docker Hub access, and host addresses must be configured by each user.
 
-## Delivery flow
+## Architecture
+
+### End-to-end architecture
+
+```mermaid
+flowchart TD
+    Dev[Developer pushes a change] --> GitHub[GitHub repository]
+    GitHub -->|Webhook| Jenkins[Jenkins Pipeline]
+    Jenkins -->|Checkout and Maven build/test| WAR[WAR artifact]
+    WAR -->|SSH/SCP: app.war and Dockerfile| DockerHost[Remote Docker build host]
+    DockerHost -->|Build-number tag and local latest tag| LocalImage[Docker image]
+    Jenkins -->|SSH plus Docker Hub credentials on stdin| Ansible[Ansible controller]
+    Ansible -->|Play 1: inspect, tag, push| DockerHost
+    DockerHost -->|Versioned image| Hub[Docker Hub]
+    Ansible -->|Play 2: kubectl update and verify| EKSAdmin[EKS management host]
+    EKSAdmin -->|IAM role and kubeconfig| EKS[Amazon EKS cluster]
+    EKS --> Deploy[Kubernetes Deployment: 2 replicas]
+    Deploy --> Pods[Tomcat application Pods on port 8080]
+    Pods --> Service[LoadBalancer Service: port 80 to 8080]
+    Service --> Browser[Browser]
+```
+
+### What each component does
+
+| Component | Responsibility |
+| --- | --- |
+| **GitHub** | Stores the application and pipeline source. A push to the configured branch triggers Jenkins through a webhook. |
+| **Jenkins** | Checks out the configured SCM, verifies Java/Maven, builds and tests the Maven project, archives the WAR, transfers build inputs, builds the Docker image remotely, and starts Ansible deployment. |
+| **Docker build host** | Receives the WAR as `app.war` and the Dockerfile over SSH/SCP. Docker builds `hello-world:<BUILD_NUMBER>` and a local `hello-world:latest` tag. |
+| **Ansible controller** | Receives the Docker Hub username and token from Jenkins over SSH standard input, then runs the two deployment plays using its inventory. |
+| **Docker host Ansible target** | Verifies the Jenkins-built image, creates temporary Docker auth configuration, logs in with `--password-stdin`, tags the image for Docker Hub, pushes the build-number tag, and removes temporary auth files. |
+| **EKS management host** | Uses its attached AWS IAM role and configured kubeconfig to reach the cluster. Ansible updates the Deployment image and verifies the rollout. This is an administration host, not the Kubernetes control plane. |
+| **Amazon EKS** | Runs the managed Kubernetes control plane and worker nodes. The Deployment keeps two application replicas available during rolling updates. |
+| **LoadBalancer Service** | Exposes HTTP on port 80 and routes to application containers on port 8080. AWS creates the load balancer; its generated hostname is intentionally not stored here. |
+
+### Pipeline stages in detail
+
+1. **Webhook and checkout:** GitHub notifies Jenkins after a push. Jenkins checks out the SCM configured on the job and records the commit.
+2. **Build and test:** Jenkins uses the configured Java 21 and Maven 3.10.0 tools and runs `mvn -B -ntp clean package`. The Maven reactor contains the `server` and `webapp` modules; the WAR is generated at `webapp/target/webapp.war`.
+3. **Artifact archive:** Jenkins verifies that a WAR exists, archives it, and fingerprints the artifact for traceability.
+4. **Transfer to Docker host:** Jenkins uses its SSH credential to copy the WAR and Dockerfile to the remote build host. The WAR is named `app.war`, matching the Dockerfile's `COPY app.war` instruction.
+5. **Image build:** The Docker host builds the image from the Tomcat base image in the Dockerfile. It tags the local image with the Jenkins build number and `latest`. The Ansible playbook publishes the versioned tag; it does not push the `latest` tag.
+6. **Publish image:** Jenkins invokes Ansible on its controller host. The controller runs Play 1 against the Docker host, verifies the local image, authenticates to Docker Hub using the token from standard input, tags the image as `<DOCKERHUB_NAMESPACE>/hello-world:<BUILD_NUMBER>`, and pushes it.
+7. **Deploy to EKS:** Ansible runs Play 2 against the EKS management host. It checks cluster connectivity, updates `hello-world-deployment` to the new image, waits for rollout completion, and verifies two ready replicas.
+8. **Serve traffic:** The Kubernetes Service selects pods labeled `app=hello-world`, accepts traffic on port 80, and forwards it to Tomcat on port 8080.
+
+### Kubernetes workload
+
+The Deployment runs two `hello-world-container` replicas in the `default` namespace. Its rolling update strategy sets `maxSurge: 1` and `maxUnavailable: 0`. A TCP readiness probe checks port 8080 after a 10-second initial delay and every 10 seconds. Each pod requests 100m CPU and 256Mi memory, with limits of 500m CPU and 512Mi memory.
+
+The Service is type `LoadBalancer`, uses the same `app=hello-world` selector, and maps TCP port 80 to target port 8080. A cloud load balancer may continue to incur AWS charges until the Service is deleted.
+
+### EKS cluster lifecycle
+
+Cluster provisioning is separate from the Jenkins application pipeline. The sanitized `eks/cluster.example.yaml` documents the `eksctl` configuration: a managed `t3.medium` node group, 20 GiB worker volumes, an initial desired size of zero, and scaling bounds of zero to three. The project scaled the node group to two workers before deploying the application. Scaling workers to zero does not remove the EKS control plane, NAT Gateway, management host, or every networking resource.
+
+### Image tag flow
 
 ```text
-GitHub push / webhook
-  → Jenkins checkout and Maven build/test
-  → archive WAR
-  → SSH transfer WAR + Dockerfile to Docker build host
-  → build hello-world:<BUILD_NUMBER> and hello-world:latest
-  → Ansible tags and pushes the versioned image to Docker Hub
-  → Ansible updates the EKS Deployment and verifies rollout
-  → two ready replicas behind a LoadBalancer Service (port 80 → 8080)
+Jenkins build N
+  Docker host: hello-world:N and hello-world:latest (local tags)
+  Docker Hub:  <DOCKERHUB_NAMESPACE>/hello-world:N
+  EKS:         Deployment updated to <DOCKERHUB_NAMESPACE>/hello-world:N
 ```
+
+The build-number tag connects a running deployment to a specific Jenkins build. The Docker Hub namespace is a placeholder in this public repository; configure the real repository in Jenkins Credentials/job settings.
 
 ## Technology
 
