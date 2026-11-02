@@ -1,0 +1,165 @@
+---
+- name: Push Jenkins Docker image to Docker Hub
+  hosts: docker_host
+  gather_facts: false
+
+  vars:
+    dockerhub_username: "{{ lookup('ansible.builtin.env', 'DOCKERHUB_USER') }}"
+    image_name: hello-world
+    image_tag: "{{ build_number | default('4') | string }}"
+    local_image: "{{ image_name }}:{{ image_tag }}"
+    hub_image: "{{ dockerhub_repository }}:{{ image_tag }}"
+
+  tasks:
+    - name: Verify Docker Hub credentials are available
+      ansible.builtin.assert:
+        that:
+          - lookup('ansible.builtin.env', 'DOCKERHUB_TOKEN') | length > 0
+          - dockerhub_username | length > 0
+          - dockerhub_repository | length > 0
+        fail_msg: Docker Hub credentials or repository are not configured
+      no_log: true
+
+    - name: Verify Jenkins-built Docker image
+      ansible.builtin.command:
+        argv:
+          - docker
+          - image
+          - inspect
+          - "{{ local_image }}"
+      changed_when: false
+
+    - name: Create temporary Docker config directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: docker-cicd-
+      register: docker_config
+
+    - name: Authenticate and push image to Docker Hub
+      block:
+        - name: Log in to Docker Hub
+          ansible.builtin.command:
+            argv:
+              - docker
+              - --config
+              - "{{ docker_config.path }}"
+              - login
+              - --username
+              - "{{ dockerhub_username }}"
+              - --password-stdin
+            stdin: "{{ lookup('ansible.builtin.env', 'DOCKERHUB_TOKEN') }}"
+          no_log: true
+
+        - name: Tag Docker image
+          ansible.builtin.command:
+            argv:
+              - docker
+              - tag
+              - "{{ local_image }}"
+              - "{{ hub_image }}"
+
+        - name: Push versioned Docker image
+          ansible.builtin.command:
+            argv:
+              - docker
+              - --config
+              - "{{ docker_config.path }}"
+              - push
+              - "{{ hub_image }}"
+
+      always:
+        - name: Remove temporary Docker credentials
+          ansible.builtin.file:
+            path: "{{ docker_config.path }}"
+            state: absent
+          no_log: true
+
+- name: Deploy updated Docker image to Amazon EKS
+  hosts: eks_host
+  gather_facts: false
+
+  vars:
+    image_tag: "{{ build_number | default('4') | string }}"
+    deployment_name: hello-world-deployment
+    container_name: hello-world-container
+    k8s_namespace: default
+    hub_image: "{{ dockerhub_repository }}:{{ image_tag }}"
+
+  tasks:
+    - name: Verify EKS cluster connectivity
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - cluster-info
+      changed_when: false
+
+    - name: Verify existing Kubernetes Deployment
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - get
+          - deployment
+          - "{{ deployment_name }}"
+          - -n
+          - "{{ k8s_namespace }}"
+      changed_when: false
+
+    - name: Update Kubernetes Deployment image
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - set
+          - image
+          - "deployment/{{ deployment_name }}"
+          - "{{ container_name }}={{ hub_image }}"
+          - -n
+          - "{{ k8s_namespace }}"
+
+    - name: Wait for Kubernetes rolling update
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - rollout
+          - status
+          - "deployment/{{ deployment_name }}"
+          - -n
+          - "{{ k8s_namespace }}"
+          - --timeout=300s
+      changed_when: false
+
+    - name: Verify two application replicas are ready
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - wait
+          - --for=jsonpath={.status.readyReplicas}=2
+          - "deployment/{{ deployment_name }}"
+          - -n
+          - "{{ k8s_namespace }}"
+          - --timeout=120s
+      changed_when: false
+
+    - name: Display Kubernetes Deployment
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - get
+          - deployment
+          - "{{ deployment_name }}"
+          - -n
+          - "{{ k8s_namespace }}"
+      changed_when: false
+
+    - name: Display application pods
+      ansible.builtin.command:
+        argv:
+          - kubectl
+          - get
+          - pods
+          - -n
+          - "{{ k8s_namespace }}"
+          - -l
+          - app=hello-world
+          - -o
+          - wide
+      changed_when: false

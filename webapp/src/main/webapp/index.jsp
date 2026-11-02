@@ -5,7 +5,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ashutosh Motors | Drive Your Dreams</title>
+    <title>Velocity Motors | Drive Your Dreams</title>
 
     <style>
         * {
@@ -401,7 +401,7 @@
 <body>
 
     <nav class="navbar">
-        <a href="#home" class="logo">Srushti<span>.</span></a>
+        <a href="#home" class="logo">Velocity<span>.</span></a>
 
         <div class="nav-links">
             <a href="#home">Home</a>

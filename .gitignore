@@ -1,0 +1,26 @@
+# Maven and Java
+**/target/
+*.class
+*.war
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+**/inventory.ini
+inventory.ini
+**/kubeconfig
+**/.kube/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Ansible
+*.retry
+
+# Editor and OS files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
