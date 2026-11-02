@@ -79,18 +79,73 @@ Java 21 · Maven 3.10.0 · Jenkins · Docker · Ansible · Docker Hub · Kuberne
 
 ```text
 .
-├── README.md
 ├── .gitignore
-├── Jenkinsfile
 ├── Dockerfile
+├── Jenkinsfile
+├── README.md
 ├── pom.xml
-├── server/                         # Java module
-├── webapp/                         # WAR module and demo UI
-├── ansible/                        # Sanitized inventory example and deployment playbook
-├── kubernetes/                     # EKS Deployment and LoadBalancer Service
-├── eks/                            # Sanitized eksctl cluster example
-└── docs/                           # Architecture, setup, operations, and security notes
+├── ansible/
+│   ├── README.md
+│   ├── ansible.cfg
+│   ├── deploy.yml
+│   └── inventory.example.ini
+├── docs/
+│   ├── architecture.md
+│   ├── eks-and-kubernetes.md
+│   ├── pipeline-and-automation.md
+│   ├── security-and-secrets.md
+│   └── setup-guide.md
+├── eks/
+│   ├── README.md
+│   └── cluster.example.yaml
+├── kubernetes/
+│   ├── README.md
+│   ├── deployment.yaml
+│   └── service.yaml
+├── server/
+│   ├── pom.xml
+│   └── src/
+│       ├── main/java/com/example/Greeter.java
+│       ├── site/apt/index.apt
+│       └── test/java/com/example/TestGreeter.java
+└── webapp/
+    ├── pom.xml
+    └── src/main/webapp/
+        ├── index.jsp
+        └── WEB-INF/web.xml
 ```
+
+### What the files do
+
+| Path | Purpose |
+| --- | --- |
+| `README.md` | Project overview, architecture, build instructions, and this file map. |
+| `.gitignore` | Excludes Maven build output, local inventories, kubeconfig, private keys, environment files, and editor/OS files. |
+| `pom.xml` | Parent Maven project. It builds the `server` and `webapp` modules together. |
+| `Jenkinsfile` | Pipeline example: checks out the Jenkins job's SCM, builds/tests the WAR, transfers it to the Docker host, builds the image, and starts Ansible deployment. Fill the host and Docker Hub placeholders in Jenkins configuration before running it. |
+| `Dockerfile` | Packages `app.war` into the Tomcat image and serves it on container port 8080. Jenkins transfers the Maven WAR using that expected filename. |
+| `ansible/ansible.cfg` | Ansible defaults, including the private runtime inventory path, SSH host-key checking, timeout, and SSH connection settings. |
+| `ansible/inventory.example.ini` | Safe inventory template for the Docker build host and EKS management host. Copy it to a private `inventory.ini` and fill in local connection details; do not commit that real inventory. |
+| `ansible/deploy.yml` | Two plays: publish the versioned image from the Docker host, then update the Kubernetes Deployment from the EKS management host and verify rollout/readiness. |
+| `ansible/README.md` | Ansible prerequisites, inventory setup, credential flow, and Jenkins invocation notes. |
+| `kubernetes/deployment.yaml` | Two-replica application Deployment, rolling-update policy, readiness probe, and CPU/memory requests and limits. Its Docker Hub namespace is a placeholder. |
+| `kubernetes/service.yaml` | Public `LoadBalancer` Service mapping port 80 to the application on port 8080. Its generated AWS endpoint is intentionally not checked in. |
+| `kubernetes/README.md` | How to configure, apply, and inspect the Kubernetes manifests, with a note about load-balancer costs. |
+| `eks/cluster.example.yaml` | Sanitized `eksctl` ClusterConfig example for a managed worker group. Replace the cluster and AWS region placeholders before use. |
+| `eks/README.md` | EKS creation, connection, node scaling, IAM, and cost/cleanup guidance. |
+| `docs/architecture.md` | Component diagram and responsibilities across Jenkins, Docker, Ansible, and EKS. |
+| `docs/pipeline-and-automation.md` | Jenkins stages and the two Ansible plays in execution order. |
+| `docs/setup-guide.md` | Prerequisites and setup sequence for Jenkins, Ansible, Docker, and EKS. |
+| `docs/eks-and-kubernetes.md` | Cluster configuration, workload behavior, rollout checks, and AWS cost notes. |
+| `docs/security-and-secrets.md` | Secret handling, sanitization rules, and security review findings. |
+| `server/` | Maven Java module containing the greeting class, unit tests, and Maven site source. |
+| `server/src/main/java/com/example/Greeter.java` | Small application logic class used by the Java module. |
+| `server/src/test/java/com/example/TestGreeter.java` | Unit tests for the greeting behavior. |
+| `webapp/` | Maven WAR module containing the JSP application interface and deployment descriptor. |
+| `webapp/src/main/webapp/index.jsp` | Demo web page packaged into the WAR. Its login form is visual only; the repository does not implement authentication. |
+| `webapp/src/main/webapp/WEB-INF/web.xml` | Web application descriptor packaged with the WAR. |
+
+Maven's generated `target/` directories and the real Ansible inventory are local/runtime files, so they are intentionally absent from the tree above.
 
 See [architecture](docs/architecture.md), [pipeline and automation](docs/pipeline-and-automation.md), [setup guide](docs/setup-guide.md), [EKS and Kubernetes](docs/eks-and-kubernetes.md), and [security notes](docs/security-and-secrets.md).
 
